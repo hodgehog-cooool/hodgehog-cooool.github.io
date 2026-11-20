@@ -11,32 +11,81 @@
 <title>AZAT VPN · Панель управления</title>
 <style>
 body{margin:0;background:#101A2E;color:#F2F6FA;font:15px/1.6 Inter,system-ui,sans-serif}
-#msg{position:fixed;inset:0;display:grid;place-items:center;padding:32px;text-align:center}
-#msg .box{max-width:460px;padding:32px;border:1px solid #354862;border-radius:24px;background:#16223B}
+#msg{position:fixed;inset:0;display:grid;place-items:center;padding:32px;text-align:center;z-index:99999}
+#msg .box{max-width:520px;padding:32px;border:1px solid #354862;border-radius:24px;background:#16223B;color:#F2F6FA}
+#msg .err{color:#FE6C66;font-size:13px;margin-top:12px;word-break:break-word}
 </style>
 </head>
 <body>
 <div id="root"></div>
 <div id="msg"><div class="box">Ищем рабочий сервер…</div></div>
 <script>
-(async function(){
+(function(){
+  var origFetch = window.fetch.bind(window);
   var msg = document.getElementById('msg');
-  function say(t){ if(msg) msg.innerHTML='<div class="box">'+t+'</div>'; }
-  try {
-    var r = await fetch('https://hodgehog-cooool.github.io/azat-vpn-mirrors/bootstrap.json?t=', {cache:'no-store'});
-    if(!r.ok) throw new Error('bootstrap '+r.status);
-    var d = await r.json();
-    var bases = (d.live_api_bases && d.live_api_bases.length) ? d.live_api_bases : (d.api_bases||[]);
-    var base = '';
-    for (var i=0;i<bases.length;i++){
-      if (bases[i] && bases[i].indexOf('azatn.ru')<0){ base = bases[i].replace(/\/+$/,''); break; }
+  function say(t, err){
+    if(!msg) return;
+    msg.innerHTML = '<div class="box">'+t+(err?'<div class="err">'+err+'</div>':'')+'</div>';
+  }
+  var bases = [];
+  var preferred = '';
+
+  async function boot(){
+    try {
+      var r = await origFetch('https://raw.githubusercontent.com/hodgehog-cooool/azat-vpn-mirrors/main/bootstrap.json?t=', {cache:'no-store'});
+      if(!r.ok) throw new Error('bootstrap HTTP '+r.status);
+      var d = await r.json();
+      var list = (d.live_api_bases && d.live_api_bases.length) ? d.live_api_bases : (d.api_bases||[]);
+      for (var i=0;i<list.length;i++){
+        var b = String(list[i]).replace(/\/+$/,'');
+        if (b && b.indexOf('azatn.ru')<0 && bases.indexOf(b)<0) bases.push(b);
+      }
+      for (var j=0;j<(d.api_bases||[]).length;j++){
+        var z = String(d.api_bases[j]).replace(/\/+$/,'');
+        if (z && bases.indexOf(z)<0) bases.push(z);
+      }
+      if(!bases.length) throw new Error('в bootstrap нет API-адресов');
+    } catch(e){
+      say('Не удалось прочитать список серверов.', e.message);
+      return;
     }
-    if(!base) throw new Error('нет рабочего API');
-    var orig = window.fetch;
-    window.fetch = function(input, init){
-      if (typeof input==='string' && input.charAt(0)==='/') input = base + input;
-      return orig.apply(this, [input, init]);
+
+    // Per-request fallback: a dead/throttled mirror must never break the whole panel.
+    window.fetch = async function(input, init){
+      var url = (typeof input === 'string') ? input : (input && input.url) || '';
+      if (url.charAt(0) !== '/') return origFetch(input, init);
+      var path = url;
+      var order = [];
+      if (preferred) order.push(preferred);
+      for (var i=0;i<bases.length;i++) if (bases[i]!==preferred) order.push(bases[i]);
+      var lastErr = '';
+      for (var k=0;k<order.length;k++){
+        var base = order[k];
+        var controller = new AbortController();
+        var timer = setTimeout(function(){ controller.abort(); }, 12000);
+        var opts = Object.assign({}, init||{});
+        if (opts.signal) {
+          opts.signal.addEventListener('abort', function(){ controller.abort(); });
+        }
+        opts.signal = controller.signal;
+        try {
+          var res = await origFetch(base + path, opts);
+          clearTimeout(timer);
+          var type = res.headers.get('content-type') || '';
+          if (res.ok && (type.indexOf('json')>=0 || path.indexOf('/api/')<0)) {
+            preferred = base;
+            return res;
+          }
+          lastErr = 'HTTP '+res.status+' ('+type.slice(0,40)+')';
+          try { res.body && res.body.cancel(); } catch(_){}
+        } catch(e){
+          clearTimeout(timer);
+          lastErr = e.name==='AbortError' ? 'таймаут' : e.message;
+        }
+      }
+      throw new Error('Сервер не отвечает: '+lastErr);
     };
+
     say('Загружаем панель управления…');
     var s = document.createElement('script');
     s.type='module'; s.crossorigin='anonymous';
@@ -44,9 +93,8 @@ body{margin:0;background:#101A2E;color:#F2F6FA;font:15px/1.6 Inter,system-ui,san
     s.onload=function(){ if(msg) msg.remove(); };
     s.onerror=function(){ say('Не удалось загрузить интерфейс. Обновите страницу.'); };
     document.head.appendChild(s);
-  } catch(e){
-    say('Ошибка подключения: '+e.message+'. Обновите страницу.');
   }
+  boot();
 })();
 </script>
 </body>
