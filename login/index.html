@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="ru" data-theme="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="theme-color" content="#101A2E" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Sora:wght@500;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" crossorigin href="https://hodgehog-cooool.github.io/azat-vpn-mirrors/assets/index-SH4SSgBD.css" />
+<title>AZAT VPN · Панель управления</title>
+<style>
+body{margin:0;background:#101A2E;color:#F2F6FA;font:15px/1.6 Inter,system-ui,sans-serif}
+#msg{position:fixed;inset:0;display:grid;place-items:center;padding:32px;text-align:center}
+#msg .box{max-width:460px;padding:32px;border:1px solid #354862;border-radius:24px;background:#16223B}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<div id="msg"><div class="box">Ищем рабочий сервер…</div></div>
+<script>
+(async function(){
+  var msg = document.getElementById('msg');
+  function say(t){ if(msg) msg.innerHTML='<div class="box">'+t+'</div>'; }
+  try {
+    var r = await fetch('https://hodgehog-cooool.github.io/azat-vpn-mirrors/bootstrap.json?t=', {cache:'no-store'});
+    if(!r.ok) throw new Error('bootstrap '+r.status);
+    var d = await r.json();
+    var bases = (d.live_api_bases && d.live_api_bases.length) ? d.live_api_bases : (d.api_bases||[]);
+    var base = '';
+    for (var i=0;i<bases.length;i++){
+      if (bases[i] && bases[i].indexOf('azatn.ru')<0){ base = bases[i].replace(/\/+$/,''); break; }
+    }
+    if(!base) throw new Error('нет рабочего API');
+    var orig = window.fetch;
+    window.fetch = function(input, init){
+      if (typeof input==='string' && input.charAt(0)==='/') input = base + input;
+      return orig.apply(this, [input, init]);
+    };
+    say('Загружаем панель управления…');
+    var s = document.createElement('script');
+    s.type='module'; s.crossorigin='anonymous';
+    s.src='https://hodgehog-cooool.github.io/azat-vpn-mirrors/assets/index-bOTTBtvy.js';
+    s.onload=function(){ if(msg) msg.remove(); };
+    s.onerror=function(){ say('Не удалось загрузить интерфейс. Обновите страницу.'); };
+    document.head.appendChild(s);
+  } catch(e){
+    say('Ошибка подключения: '+e.message+'. Обновите страницу.');
+  }
+})();
+</script>
+</body>
+</html>
